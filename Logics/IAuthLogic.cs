@@ -5,6 +5,6 @@ namespace GraphQL.PureCodeFirst.Auth.Logics
     public interface IAuthLogic
     {
         string Register(RegisterInputType registerInput);
-       // bool CheckPassword(string password);
+       string Login(LoginInputType loginInput);
     }
 }

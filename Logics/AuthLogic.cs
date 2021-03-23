@@ -1,19 +1,29 @@
 using System;
+using System.Collections.Generic;
+using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
+using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 using GraphQL.PureCodeFirst.Auth.Data;
 using GraphQL.PureCodeFirst.Auth.Data.Entities;
+using GraphQL.PureCodeFirst.Auth.Shared;
 using GraphQL.PureCodeFirst.InputTypes;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 
 namespace GraphQL.PureCodeFirst.Auth.Logics
 {
     public class AuthLogic : IAuthLogic
     {
         private readonly AuthContext _authContext;
-        public AuthLogic(AuthContext authContext)
+        private readonly TokenSettings _tokenSettings;
+        public AuthLogic(AuthContext authContext,
+           IOptions<TokenSettings> tokenSettings)
         {
             _authContext = authContext;
+            _tokenSettings = tokenSettings.Value;
         }
         private string ResigstrationValidations(RegisterInputType registerInput)
         {
@@ -99,31 +109,77 @@ namespace GraphQL.PureCodeFirst.Auth.Logics
             return "Registration success";
         }
 
-        // private bool ValidatePasswordHash(string password, string dbPassword)
-        // {
-        //     byte[] hashBytes = Convert.FromBase64String(dbPassword);
+        private bool ValidatePasswordHash(string password, string dbPassword)
+        {
+            byte[] hashBytes = Convert.FromBase64String(dbPassword);
 
-        //     byte[] salt = new byte[16];
-        //     Array.Copy(hashBytes, 0, salt, 0, 16);
+            byte[] salt = new byte[16];
+            Array.Copy(hashBytes, 0, salt, 0, 16);
 
-        //     var pbkdf2 = new Rfc2898DeriveBytes(password, salt, 1000);
-        //     byte[] hash = pbkdf2.GetBytes(20);
+            var pbkdf2 = new Rfc2898DeriveBytes(password, salt, 1000);
+            byte[] hash = pbkdf2.GetBytes(20);
 
-        //     for (int i = 0; i < 20; i++)
-        //     {
-        //         if (hashBytes[i + 16] != hash[i])
-        //         {
-        //             return false;
-        //         }
-        //     }
+            for (int i = 0; i < 20; i++)
+            {
+                if (hashBytes[i + 16] != hash[i])
+                {
+                    return false;
+                }
+            }
 
-        //     return true;
-        // }
+            return true;
+        }
 
-        // public bool CheckPassword(string password)
-        // {
-        //     var user = _authContext.User.Where(_ => _.EmailAddress == "naveen@test.com").FirstOrDefault();
-        //     return ValidatePasswordHash(password, user.Password);
-        // }
+        private string GetJWTAuthKey(User user, List<UserRoles> roles)
+        {
+            var securtityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_tokenSettings.Key));
+
+            var credentials = new SigningCredentials(securtityKey, SecurityAlgorithms.HmacSha256);
+
+            var claims = new List<Claim>();
+
+            claims.Add(new Claim("Email", user.EmailAddress));
+            claims.Add(new Claim("LastName", user.LastName));
+            if ((roles?.Count ?? 0) > 0)
+            {
+                foreach (var role in roles)
+                {
+                    claims.Add(new Claim(ClaimTypes.Role, role.Name));
+                }
+            }
+
+            var jwtSecurityToken = new JwtSecurityToken(
+                issuer: _tokenSettings.Issuer,
+                audience: _tokenSettings.Audience,
+                expires: DateTime.Now.AddMinutes(30),
+                signingCredentials: credentials,
+                claims:claims
+            );
+
+            return new JwtSecurityTokenHandler().WriteToken(jwtSecurityToken);
+        }
+        public string Login(LoginInputType loginInput)
+        {
+            if (string.IsNullOrEmpty(loginInput.Email)
+            || string.IsNullOrEmpty(loginInput.Passowrd))
+            {
+                return "Invalid Credentials";
+            }
+
+            var user = _authContext.User.Where(_ => _.EmailAddress == loginInput.Email).FirstOrDefault();
+            if (user == null)
+            {
+                return "Invalid Credentials";
+            }
+
+            if (!ValidatePasswordHash(loginInput.Passowrd, user.Password))
+            {
+                return "Invalid Credentials";
+            }
+
+            var roles = _authContext.UserRoles.Where(_ => _.UserId == user.UserId).ToList();
+            
+            return GetJWTAuthKey(user, roles);
+        }
     }
 }

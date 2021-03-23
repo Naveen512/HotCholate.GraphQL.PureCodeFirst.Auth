@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using GraphQL.PureCodeFirst.Auth.Data;
 using GraphQL.PureCodeFirst.Auth.Logics;
 using GraphQL.PureCodeFirst.Auth.Resolvers;
+using GraphQL.PureCodeFirst.Auth.Shared;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.HttpsPolicy;
@@ -46,6 +47,7 @@ namespace GraphQL.PureCodeFirst.Auth
             });
 
             services.AddScoped<IAuthLogic, AuthLogic>();
+            services.Configure<TokenSettings>(Configuration.GetSection("TokenSettings"));
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.

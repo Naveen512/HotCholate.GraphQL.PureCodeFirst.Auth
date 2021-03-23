@@ -11,9 +11,9 @@ namespace GraphQL.PureCodeFirst.Auth.Resolvers
             return authLogic.Register(registerInput);
         }
 
-        // public bool Verify([Service] IAuthLogic authLogic, string password)
-        // {
-        //     return authLogic.CheckPassword(password);
-        // }
+        public string Login([Service] IAuthLogic authLogic,LoginInputType loginInput)
+        {
+            return authLogic.Login(loginInput);
+        }
     }
 }
