@@ -161,7 +161,7 @@ namespace GraphQL.PureCodeFirst.Auth.Logics
         public string Login(LoginInputType loginInput)
         {
             if (string.IsNullOrEmpty(loginInput.Email)
-            || string.IsNullOrEmpty(loginInput.Passowrd))
+            || string.IsNullOrEmpty(loginInput.Password))
             {
                 return "Invalid Credentials";
             }
@@ -172,7 +172,7 @@ namespace GraphQL.PureCodeFirst.Auth.Logics
                 return "Invalid Credentials";
             }
 
-            if (!ValidatePasswordHash(loginInput.Passowrd, user.Password))
+            if (!ValidatePasswordHash(loginInput.Password, user.Password))
             {
                 return "Invalid Credentials";
             }
