@@ -65,7 +65,8 @@ namespace GraphQL.PureCodeFirst.Auth
                     ValidAudience = tokenSettings.Audience,
                     ValidateAudience = true,
                     IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(tokenSettings.Key)),
-                    ValidateIssuerSigningKey = true
+                    ValidateIssuerSigningKey = true,
+                    //ClockSkew = TimeSpan.Zero // enable this line to validate the expiration time below 5mins
                 };
             });
 

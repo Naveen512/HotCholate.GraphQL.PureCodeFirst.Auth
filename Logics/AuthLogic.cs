@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using GraphQL.PureCodeFirst.Auth.Data;
 using GraphQL.PureCodeFirst.Auth.Data.Entities;
+using GraphQL.PureCodeFirst.Auth.Models;
 using GraphQL.PureCodeFirst.Auth.Shared;
 using GraphQL.PureCodeFirst.InputTypes;
 using Microsoft.Extensions.Options;
@@ -153,33 +154,120 @@ namespace GraphQL.PureCodeFirst.Auth.Logics
                 audience: _tokenSettings.Audience,
                 expires: DateTime.Now.AddMinutes(30),
                 signingCredentials: credentials,
-                claims:claims
+                claims: claims
             );
 
             return new JwtSecurityTokenHandler().WriteToken(jwtSecurityToken);
         }
-        public string Login(LoginInputType loginInput)
+        public TokenResponseModel Login(LoginInputType loginInput)
         {
+            var result = new TokenResponseModel { Message = "Success" };
             if (string.IsNullOrEmpty(loginInput.Email)
             || string.IsNullOrEmpty(loginInput.Password))
             {
-                return "Invalid Credentials";
+                result.Message = "Invalid Credentials";
+                return result;
             }
 
             var user = _authContext.User.Where(_ => _.EmailAddress == loginInput.Email).FirstOrDefault();
             if (user == null)
             {
-                return "Invalid Credentials";
+                result.Message = "Invalid Credentials";
+                return result;
             }
 
             if (!ValidatePasswordHash(loginInput.Password, user.Password))
             {
-                return "Invalid Credentials";
+                result.Message = "Invalid Credentials";
+                return result;
             }
 
             var roles = _authContext.UserRoles.Where(_ => _.UserId == user.UserId).ToList();
-            
-            return GetJWTAuthKey(user, roles);
+
+            result.AccessToken = GetJWTAuthKey(user, roles);
+
+            result.RefreshToken = GenerateRefreshToken();
+
+            user.RefreshToken = result.RefreshToken;
+            user.RefershTokenExpiration = DateTime.Now.AddDays(7);
+            _authContext.SaveChanges();
+
+            return result;
+        }
+
+        private string GenerateRefreshToken()
+        {
+            var randomNumber = new byte[32];
+            using (var generator = RandomNumberGenerator.Create())
+            {
+                generator.GetBytes(randomNumber);
+                return Convert.ToBase64String(randomNumber);
+            }
+        }
+
+        private ClaimsPrincipal GetClaimsFromExpiredToken(string accessToken)
+        {
+            var tokenValidationParameter = new TokenValidationParameters
+            {
+                ValidIssuer = _tokenSettings.Issuer,
+                ValidateIssuer = true,
+                ValidAudience = _tokenSettings.Audience,
+                ValidateAudience = true,
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_tokenSettings.Key)),
+                ValidateLifetime = false // ignore expiration
+            };
+
+            var jwtHandler = new JwtSecurityTokenHandler();
+            var principal = jwtHandler.ValidateToken(accessToken, tokenValidationParameter, out SecurityToken securityToken);
+
+            var jwtScurityToken = securityToken as JwtSecurityToken;
+            if (jwtScurityToken == null)
+            {
+                return null;
+            }
+
+            return principal;
+        }
+
+        public TokenResponseModel RenewAccessToken(RenewTokenInputType renewToken)
+        {
+            var result = new TokenResponseModel { Message = "Success" };
+
+            ClaimsPrincipal principal = GetClaimsFromExpiredToken(renewToken.AccessToken);
+
+            if (principal == null)
+            {
+                result.Message = "Invalid Token";
+                return result;
+            }
+            string email = principal.Claims.Where(_ => _.Type == "Email").Select(_ => _.Value).FirstOrDefault();
+            if (string.IsNullOrEmpty(email))
+            {
+                result.Message = "Invalid Token";
+                return result;
+            }
+
+            var user = _authContext.User
+            .Where(_ => _.EmailAddress == email && _.RefreshToken == renewToken.RefreshToken && _.RefershTokenExpiration > DateTime.Now).FirstOrDefault();
+            if (user == null)
+            {
+                result.Message = "Invalid Token";
+                return result;
+            }
+
+            var userRoles = _authContext.UserRoles.Where(_ => _.UserId == user.UserId).ToList();
+
+            result.AccessToken = GetJWTAuthKey(user, userRoles);
+
+            result.RefreshToken = GenerateRefreshToken();
+
+            user.RefreshToken = result.RefreshToken;
+            user.RefershTokenExpiration = DateTime.Now.AddDays(7);
+
+            _authContext.SaveChanges();
+
+            return result;
+
         }
     }
 }
